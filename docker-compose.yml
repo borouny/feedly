@@ -1,0 +1,76 @@
+version: "3.3"
+
+services:
+  db:
+    image: postgres
+    volumes:
+      - ./data/db:/var/lib/postgresql/data
+    environment:
+      - POSTGRES_PASSWORD=postgres
+    networks:
+      - main
+  rabbitmq:
+    container_name: rabbitmq
+    image: rabbitmq:latest
+    hostname: rabbitmq
+    ports:
+      - 5672:5672
+    networks:
+      - main
+  web:
+    container_name: web
+    build: .
+    command: python manage.py runserver 0.0.0.0:8000
+    volumes:
+      - .:/app
+    ports:
+      - "8000:8000"
+    environment:
+      - POSTGRES_NAME=postgres
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - DATABASE_HOST=db
+      - ENV=PRODUCTION
+    networks:
+      - main
+    depends_on:
+      - db
+      - rabbitmq
+  worker_update_rss_item:
+    build: .
+    command: celery -A digicloud worker -l info -Q update_rss_item --concurrency=20
+    volumes:
+      - .:/app
+    networks:
+      - main
+    depends_on:
+      - db
+      - rabbitmq
+    environment:
+      - CELERY_BROKER=amqp://guest:guest@rabbitmq:5672
+  worker_rss_fetcher:
+    build: .
+    command: celery -A digicloud worker -l info -Q rss_fetcher --concurrency=20
+    volumes:
+      - .:/app
+    networks:
+      - main
+    depends_on:
+      - db
+      - rabbitmq
+    environment:
+      - CELERY_BROKER=amqp://guest:guest@rabbitmq:5672
+  celery-beat:
+    build: .
+    command: celery -A digicloud beat -l info
+    volumes:
+      - .:/app
+    networks:
+      - main
+    depends_on:
+      - db
+      - rabbitmq
+    environment:
+      - CELERY_BROKER=amqp://guest:guest@rabbitmq:5672
+networks:
+  main:
